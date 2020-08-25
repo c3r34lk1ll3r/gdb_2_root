@@ -363,6 +363,8 @@ class escalateToRoot(gdb.Command):
             return gdb.error
         try:
             c_address = int(args, 0)
+            if c_address < 0xffff:
+                raise ValueError
         except ValueError:
             r = SP.invoke(args, None)
             if len(r) == 0:
