@@ -2,7 +2,7 @@
 This python script adds some usefull command to stripped `vmlinux` image.
 
 ## What is this and why
-This script adds some usefull command for debugging kernel without symbols.
+This script adds some usefull commands for debugging kernel without symbols.
 
 The main goal is to obtain a root shell with `Android Emulator` using common _Google Play Images_ with the built-in kernel.
 
@@ -17,7 +17,6 @@ There is only one requirements: [ELFFile](https://pypi.org/project/elffile/)
 ```
   pip install elffile
 ```
-
 ## Usage
 The script adds some usefull command to __GDB__.
 
@@ -54,7 +53,7 @@ The `escalate` commands can __panic__ your kernel. You can retry.
 ## Limitations
 At this moment, this script works only with x86_64 image. In particular, I tested only with __Android 10__. Feedbacks are really appreciated. 
 
-There is an medium change to __panic__ your kernel. Just reboot and retry.
+There is an medium chance to __panic__ your kernel. Just reboot and retry.
 
 ## Kcall
 The main command is `kcall` because it allows to modify the running kernel and inject the execution of kernel function. The main idea is to create a new _stack frame_ and jump to the new address. The parameters are handled just copying the value to registers one by one. 
