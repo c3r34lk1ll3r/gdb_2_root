@@ -2,14 +2,14 @@
 This python script adds some usefull command to stripped `vmlinux` image.
 
 ## What is this and why
-This script adds some usefull command for debugging kernel without symbols.
+This script adds some usefull commands for debugging kernel without symbols.
 
-The main goal is to obtain a root shell with `Android Emulator` using common _Google Play Images_ using the builted kernel.
+The main goal is to obtain a root shell with `Android Emulator` using common _Google Play Images_ with the built-in kernel.
 
-I started this little script because I needed a way to easily obtain a root shell and I noticied that there are really few (legit)applications that check if the environment is emulated. This way, I can perform an analysis without bypassing the root detection. Moreover, using the image with Google Play you have also _Google Play Services_.
+I started this little script because I needed a way to easily obtain a root shell in emulated _AVD_ with Google Play (and Services) installed.
 
 ## Installation
-The installation is pretty straighforward:
+The installation is quite straightforward:
 1. Clone this repo
 2. Source inside __GDB__ the script (`source <path_to_repo>/root_gdb.py`)
 
@@ -17,7 +17,6 @@ There is only one requirements: [ELFFile](https://pypi.org/project/elffile/)
 ```
   pip install elffile
 ```
-
 ## Usage
 The script adds some usefull command to __GDB__.
 
@@ -48,11 +47,13 @@ The main objective of this script is to obtain a root shell in a any AVD without
 7. `escalate sh`, wait for the completation and `continue`. This command refuses to execute if it is not in the context of `swapper` process so you should `continue` and break few times before catching the right process.
 9. Enjoy your rooted Google Image emulator (or the panic :D)
 
-The `escalate` commands can __panic__ your kernel. You can retry. 
+The `escalate` commands can __panic__ your kernel. You can retry.
+
+![Escalation example](https://github.com/c3r34lk1ll3r/gdb_2_root/blob/master/escalate.gif?raw=true)
 ## Limitations
 At this moment, this script works only with x86_64 image. In particular, I tested only with __Android 10__. Feedbacks are really appreciated. 
 
-There is an medium change to __panic__ your kernel. Just reboot and retry.
+There is an medium chance to __panic__ your kernel. Just reboot and retry.
 
 ## Kcall
 The main command is `kcall` because it allows to modify the running kernel and inject the execution of kernel function. The main idea is to create a new _stack frame_ and jump to the new address. The parameters are handled just copying the value to registers one by one. 
@@ -65,5 +66,5 @@ The return value is stored in `$ret` variable (so `x/x $ret`).
 ## How this works
 This script uses the ___ksymtab__ in order to find __init_task__ address. Then, we can search some fields like __comm__ and the tasks list.
 
-The escalation is made calling some kernel function. In particular, we can disable SELinux searching, thanks to __kallsyms_lookup_name__, the Selinux_enforcing symbol. Then, we can create a new credentials with _prepare_cred_ and change the pointer in the _task_struct_ structure.
+The escalation is made calling some kernel function. In particular, we can disable __SELinux__ searching, thanks to __kallsyms_lookup_name__, the `selinux_enforcing` symbol. Then, we can create a new credential with _prepare_cred_ and change the pointer in the _task_struct_ structure.
 
