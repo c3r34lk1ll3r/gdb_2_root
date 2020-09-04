@@ -46,6 +46,8 @@ def build_taskstruct():
     # 8K is enough
     mem = gdb.selected_inferior().read_memory(init_task, 8192)
     ## Now, there is a comm field with ASCII. Moreover, the first process is hardcoded as SWAPPER
+    task_struct['state'] = [12, "long"]
+    task_struct['stack'] = [20, "pointer"]
     for match in re.finditer(b"swapper",mem):
         task_struct['comm'] = [match.start(), "c_string"]
         break
@@ -99,14 +101,20 @@ class PrintTaskStruct(gdb.Command):
             build_taskstruct()
         args = args.split(' ')
         for i in args:
-            try:
-                address = int(i, 0)
-            except ValueError:
-                r = SP.invoke(i, None)
-                if len(r) == 0:
+            if i[0]=='$':
+                address = gdb.parse_and_eval(i)
+                if address.type.code == gdb.TYPE_CODE_VOID:
                     print(i+" not found")
                     continue
-                address = r[0]
+            else:
+                try:
+                    address = int(i, 0)
+                except ValueError:
+                    r = SP.invoke(i, None)
+                    if len(r) == 0:
+                        print(i+" not found")
+                        continue
+                    address = r[0]
             self.print_voc(task_struct, address)
     def print_voc(self, vocabulary,base):
         print(vocabulary)
@@ -391,3 +399,10 @@ class escalateToRoot(gdb.Command):
         # and WIN
 escalateToRoot()
 # }}}
+
+
+
+
+## NOTE: nop;xor rcx,rcx; mov ecx, 0xc0000082;xor rax,rax; xor rdx,rdx; RDMSR;shl rdx,32;or rax,rdx;ret
+## NOTE: nop;xor rcx,rcx; mov ecx, 0xc0000082;xor rax,rax; xor rdx,rdx; mov eax, 0xdeadbeef; mov edx, 0xbabecafe; wrmsr; ret
+
