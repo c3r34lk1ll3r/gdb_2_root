@@ -127,6 +127,7 @@ class PrintTaskStruct(gdb.Command):
                 self.print_voc(k, base)
 PrintTaskStruct()
 # }}}
+
 # Process functions {{{
 def processes():
     global task_struct
@@ -395,6 +396,11 @@ class escalateToRoot(gdb.Command):
         gdb.execute("kcall "+str(gdb.parse_and_eval("$ret"))+"()")
         # Set usage field in order to avoid crashing the system with __put_cred
         gdb.execute("set {unsigned int}$ret=0x2")
+        ## Restore previous keyring data
+        creds_address = read_pointer(c_address + task_struct['cred'][0]);
+        mem = gdb.selected_inferior().read_memory(creds_address, 1024)
+        start = gdb.parse_and_eval("$ret") + 80
+        gdb.selected_inferior().write_memory(start, mem[80:120])
         # Now we have a root credentials inside $ret
         gdb.execute("set {unsigned long}("+hex(c_address + task_struct['cred'][0])+")=$ret")
         gdb.execute("set {unsigned long}("+hex(c_address + task_struct['real_cred'][0])+")=$ret")
