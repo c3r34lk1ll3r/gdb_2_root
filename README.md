@@ -44,7 +44,7 @@ The main objective of this script is to obtain a root shell in a any AVD without
 3. You can now restart your emulator with: `emulator -avd <YourAVD> -show-kernel -no-snapshot-load -ranchu -qemu -s -append "nokaslr"`. After the boot, open a shell with `adb shell`.
 4. Open __GDB__ with `gdb <path/to/extracted/vmlinux> -ex "target remote :1234"`
 5. Source the script `source <path/to/repo/root_gdb.py>`
-7. `escalate sh`, wait for the completation and `continue`. This command refuses to execute if it is not in the context of `swapper` process so you should `continue` and break few times before catching the right process.
+6. `escalate sh`, wait for the completation and `continue`. This command refuses to execute if it is not in the context of `swapper` process so you should `continue` and break few times before catching the right process. `escalate adb`, this allows to have __adb__ rooted.
 9. Enjoy your rooted Google Image emulator (or the panic :D)
 
 The `escalate` commands can __panic__ your kernel. You can retry.
