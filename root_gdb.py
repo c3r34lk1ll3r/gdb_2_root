@@ -285,6 +285,13 @@ DEFINE['__GFP_RECLAIM'] = ((DEFINE['___GFP_DIRECT_RECLAIM']|DEFINE['___GFP_KSWAP
 DEFINE['GFP_KERNEL'] = (DEFINE['__GFP_RECLAIM'] | DEFINE['___GFP_IO'] | DEFINE['___GFP_FS'])
 # }}}
 # Calling function in current {{{
+def reach_ret_instruction():
+    while True:
+        instruction = gdb.execute("x/i $pc", to_string=True)
+        print("Executing "+instruction)
+        if 'ret' in instruction:
+            return
+        gdb.execute("stepi")
 class Exec_Function(gdb.Command):
     def __init__(self):
         super().__init__("kcall", gdb.COMMAND_USER)
@@ -299,6 +306,8 @@ class Exec_Function(gdb.Command):
             if function.type.code == gdb.TYPE_CODE_VOID:
                 print("Function not found")
                 return gdb.error
+        # This function works when executed on RET 
+        reach_ret_instruction()
         # Now, I need to save all the status
         rr = {}
         regs = gdb.execute("info register", to_string= True).split('\n')
@@ -336,6 +345,7 @@ class Exec_Function(gdb.Command):
         bb = kCallFinishBreakpoint(gdb.newest_frame(), rr, current)
         # Let's GO!
         gdb.execute("continue")
+
 class kCallFinishBreakpoint(gdb.FinishBreakpoint):
     def __init__(self, frame, regs, current):
         super(kCallFinishBreakpoint,self).__init__(frame, True)
@@ -380,20 +390,12 @@ class escalateToRoot(gdb.Command):
                 print("Process "+args+" not found")
                 return gdb.error
             c_address = r[0] 
-        # Start with creating a memory pointer
-        gdb.execute("kcall __kmalloc(256, GFP_KERNEL)")
-        gdb.execute("set $mm=$ret")
-        # Finding the symbols
-        # Disable SELINUX
-        gdb.execute("set {char[18]}$mm=\"selinux_enforcing\"")
-        gdb.execute("kcall kallsyms_lookup_name("+str(gdb.parse_and_eval("$mm"))+")")
-        gdb.execute("set $selinux_enforcing=$ret")
-        gdb.execute("set {unsigned int}$ret=0x0")
+        gdb.execute("klookup selinux_enforcing prepare_creds")
+
+        gdb.execute("set {unsigned int}$selinux_enforcing=0x0")
         # SeLinux disabled
         # Creating a new credentials struct
-        gdb.execute("set {char[14]}$mm=\"prepare_creds\"")
-        gdb.execute("kcall kallsyms_lookup_name("+str(gdb.parse_and_eval("$mm"))+")")
-        gdb.execute("kcall "+str(gdb.parse_and_eval("$ret"))+"()")
+        gdb.execute("kcall prepare_creds()")
         # Set usage field in order to avoid crashing the system with __put_cred
         gdb.execute("set {unsigned int}$ret=0x2")
         ## Restore previous keyring data
@@ -407,7 +409,61 @@ class escalateToRoot(gdb.Command):
         # and WIN
 escalateToRoot()
 # }}}
-
+class kallsyms_lookup_name(gdb.Command):
+    def __init__(self):
+        super(kallsyms_lookup_name, self).__init__("klookup", gdb.COMMAND_USER)
+    def invoke(self, args, tty):
+        returned = {}
+        mm = gdb.parse_and_eval("$__mm")
+        if mm.type.code == gdb.TYPE_CODE_VOID:
+            gdb.execute("kcall __kmalloc(1024, GFP_KERNEL")
+            gdb.execute("set $__mm=$ret")
+        for arg in args.split(' '):
+            if gdb.parse_and_eval("$"+arg).type.code != gdb.TYPE_CODE_VOID:
+                continue
+            gdb.execute("set {char["+str(len(arg)+1)+"]}$__mm=\""+arg+'\"')
+            gdb.execute("kcall kallsyms_lookup_name($__mm)")
+            gdb.execute("set $"+arg+"=$ret")
+            returned[arg] = str(gdb.parse_and_eval("$ret"))
+        print(returned)
+kallsyms_lookup_name() 
+class change_current(gdb.Command):
+    def __init__(self):
+        super(change_current, self).__init__("cprocess", gdb.COMMAND_USER)
+    def invoke(self, args, tty):
+        if len(task_struct) == 0:
+            build_taskstruct()
+        mm = gdb.parse_and_eval("$__mm")
+        if mm.type.code == gdb.TYPE_CODE_VOID:
+            gdb.execute("kcall __kmalloc(1024, GFP_KERNEL)")
+            gdb.execute("set $__mm=$ret")
+        try:
+            c_address = int(args, 0)
+            if c_address < 0xffff:
+                raise ValueError
+        except ValueError:
+            r = SP.invoke(args, None)
+            if len(r) == 0:
+                print("Process "+args+" not found")
+                return gdb.error
+            c_address = r[0] 
+        gdb.execute("set {char[20]}$__mm=\"native_write_cr3\"")
+        gdb.execute("kcall kallsyms_lookup_name("+str(gdb.parse_and_eval("$__mm"))+")")
+        f_t_s = gdb.parse_and_eval("$ret")
+        #bb = CBreakpoint("*$ret", c_address)
+        # Let's GO!
+        #gdb.execute("continue")
+class CBreakpoint(gdb.Breakpoint):
+    def __init__(self, address, current):
+        super(CBreakpoint,self).__init__(address, temporary=True)
+        self.current = current
+    def stop (self):
+        c = gdb.parse_and_eval("$current()")
+        if c == self.current:
+            return True
+        return False
+    
+change_current()
 
 
 
