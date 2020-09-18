@@ -127,7 +127,6 @@ class PrintTaskStruct(gdb.Command):
                 self.print_voc(k, base)
 PrintTaskStruct()
 # }}}
-
 # Process functions {{{
 def processes():
     global task_struct
@@ -285,6 +284,7 @@ DEFINE['__GFP_RECLAIM'] = ((DEFINE['___GFP_DIRECT_RECLAIM']|DEFINE['___GFP_KSWAP
 DEFINE['GFP_KERNEL'] = (DEFINE['__GFP_RECLAIM'] | DEFINE['___GFP_IO'] | DEFINE['___GFP_FS'])
 # }}}
 # Calling function in current {{{
+# TODO: this should do better
 def reach_ret_instruction():
     while True:
         instruction = gdb.execute("x/i $pc", to_string=True)
@@ -367,48 +367,7 @@ class kCallFinishBreakpoint(gdb.FinishBreakpoint):
         return True
 Exec_Function()
 # }}}
-# Escalate to root. Like a script {{{
-class escalateToRoot(gdb.Command):
-    def __init__(self):
-        super(escalateToRoot, self).__init__("escalate", gdb.COMMAND_USER)
-    def invoke(self, args, tty):
-        if len(task_struct) == 0:
-            build_taskstruct()
-        # I noticied that this works very well ONLY in swapper thread. I don't fully understand why
-        current = gdb.parse_and_eval("$current()")
-        comm = read_c_string(current + task_struct['comm'][0])
-        if comm != "swapper/0":
-            print("This command should be executed in swapper context but now we are in "+comm)
-            return gdb.error
-        try:
-            c_address = int(args, 0)
-            if c_address < 0xffff:
-                raise ValueError
-        except ValueError:
-            r = SP.invoke(args, None)
-            if len(r) == 0:
-                print("Process "+args+" not found")
-                return gdb.error
-            c_address = r[0] 
-        gdb.execute("klookup selinux_enforcing prepare_creds")
-
-        gdb.execute("set {unsigned int}$selinux_enforcing=0x0")
-        # SeLinux disabled
-        # Creating a new credentials struct
-        gdb.execute("kcall prepare_creds()")
-        # Set usage field in order to avoid crashing the system with __put_cred
-        gdb.execute("set {unsigned int}$ret=0x2")
-        ## Restore previous keyring data
-        creds_address = read_pointer(c_address + task_struct['cred'][0]);
-        mem = gdb.selected_inferior().read_memory(creds_address, 1024)
-        start = gdb.parse_and_eval("$ret") + 80
-        gdb.selected_inferior().write_memory(start, mem[80:120])
-        # Now we have a root credentials inside $ret
-        gdb.execute("set {unsigned long}("+hex(c_address + task_struct['cred'][0])+")=$ret")
-        gdb.execute("set {unsigned long}("+hex(c_address + task_struct['real_cred'][0])+")=$ret")
-        # and WIN
-escalateToRoot()
-# }}}
+# Kallsyms wrapper {{{
 class kallsyms_lookup_name(gdb.Command):
     def __init__(self):
         super(kallsyms_lookup_name, self).__init__("klookup", gdb.COMMAND_USER)
@@ -427,16 +386,20 @@ class kallsyms_lookup_name(gdb.Command):
             returned[arg] = str(gdb.parse_and_eval("$ret"))
         print(returned)
 kallsyms_lookup_name() 
-class change_current(gdb.Command):
+# }}}
+# Escalate to root. Like a script {{{
+class escalateToRoot(gdb.Command):
     def __init__(self):
-        super(change_current, self).__init__("cprocess", gdb.COMMAND_USER)
+        super(escalateToRoot, self).__init__("escalate", gdb.COMMAND_USER)
     def invoke(self, args, tty):
         if len(task_struct) == 0:
             build_taskstruct()
-        mm = gdb.parse_and_eval("$__mm")
-        if mm.type.code == gdb.TYPE_CODE_VOID:
-            gdb.execute("kcall __kmalloc(1024, GFP_KERNEL)")
-            gdb.execute("set $__mm=$ret")
+        # I noticied that this works very well ONLY in swapper thread. I don't fully understand why. I think that is virtual memory paging
+        current = gdb.parse_and_eval("$current()")
+        comm = read_c_string(current + task_struct['comm'][0])
+        if comm != "swapper/0":
+            print("This command should be executed in swapper context but now we are in "+comm)
+            return gdb.error
         try:
             c_address = int(args, 0)
             if c_address < 0xffff:
@@ -447,23 +410,60 @@ class change_current(gdb.Command):
                 print("Process "+args+" not found")
                 return gdb.error
             c_address = r[0] 
-        gdb.execute("set {char[20]}$__mm=\"native_write_cr3\"")
-        gdb.execute("kcall kallsyms_lookup_name("+str(gdb.parse_and_eval("$__mm"))+")")
-        f_t_s = gdb.parse_and_eval("$ret")
-        #bb = CBreakpoint("*$ret", c_address)
-        # Let's GO!
-        #gdb.execute("continue")
-class CBreakpoint(gdb.Breakpoint):
-    def __init__(self, address, current):
-        super(CBreakpoint,self).__init__(address, temporary=True)
-        self.current = current
-    def stop (self):
-        c = gdb.parse_and_eval("$current()")
-        if c == self.current:
-            return True
-        return False
-    
-change_current()
+        gdb.execute("klookup selinux_enforcing prepare_creds") # Look up for these symbols
+        # SeLinux disabled
+        gdb.execute("set {unsigned int}$selinux_enforcing=0x0")
+        # Creating a new credentials struct
+        gdb.execute("kcall prepare_creds()")
+        # Set usage field in order to avoid crashing the system with __put_cred
+        gdb.execute("set {unsigned int}$ret=0x2")
+        ## Restore previous keyring data
+        creds_address = read_pointer(c_address + task_struct['cred'][0]);
+        mem = gdb.selected_inferior().read_memory(creds_address, 512)
+        start = gdb.parse_and_eval("$ret") + 80 # Hardcoded offset
+        gdb.selected_inferior().write_memory(start, mem[80:120]) #Hardcoded
+        # Now we have a root credentials inside $ret
+        gdb.execute("set {unsigned long}("+hex(c_address + task_struct['cred'][0])+")=$ret")
+        gdb.execute("set {unsigned long}("+hex(c_address + task_struct['real_cred'][0])+")=$ret")
+        # and WIN
+escalateToRoot()
+# }}}
+#class change_current(gdb.Command):
+#    def __init__(self):
+#        super(change_current, self).__init__("cprocess", gdb.COMMAND_USER)
+#    def invoke(self, args, tty):
+#        if len(task_struct) == 0:
+#            build_taskstruct()
+#        mm = gdb.parse_and_eval("$__mm")
+#        if mm.type.code == gdb.TYPE_CODE_VOID:
+#            gdb.execute("kcall __kmalloc(1024, GFP_KERNEL)")
+#            gdb.execute("set $__mm=$ret")
+#        try:
+#            c_address = int(args, 0)
+#            if c_address < 0xffff:
+#                raise ValueError
+#        except ValueError:
+#            r = SP.invoke(args, None)
+#            if len(r) == 0:
+#                print("Process "+args+" not found")
+#                return gdb.error
+#            c_address = r[0] 
+#        gdb.execute("set {char[20]}$__mm=\"native_write_cr3\"")
+#        gdb.execute("kcall kallsyms_lookup_name("+str(gdb.parse_and_eval("$__mm"))+")")
+#        f_t_s = gdb.parse_and_eval("$ret")
+#        #bb = CBreakpoint("*$ret", c_address)
+#        # Let's GO!
+#        #gdb.execute("continue")
+#class CBreakpoint(gdb.Breakpoint):
+#    def __init__(self, address, current):
+#        super(CBreakpoint,self).__init__(address, temporary=True)
+#        self.current = current
+#    def stop (self):
+#        c = gdb.parse_and_eval("$current()")
+#        if c == self.current:
+#            return True
+#        return False
+#change_current()
 
 
 
