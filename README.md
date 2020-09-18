@@ -35,6 +35,7 @@ _Just a note_: `comm` is intended as the field in `task_struct` kernel structure
 - `current`: __GDB__ function. This is the address of the `task_struct` for the _current_ running process
 - `symbs <symbol name>`: Try to find symbols using _ksymtab_ section
 - `kcall name_or_address(parameter, parameter, ...)`: Create a new stack frame and execute a kernel function. More of this later 
+- `klookup <symbs> <symbs> ...`: Call `kallsyms_lookup_name` for each symbols passed as argument.
 - `escalate`: This command works like a script. It use `kcall` in order to disable __SELinux__ and change the credentials of one process.
 
 ## Android rooting AVD
